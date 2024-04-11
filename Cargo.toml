@@ -13,7 +13,8 @@ exclude = ["tests/resources"]
 
 [lib]
 name = "silentpayments"
-crate-type = ["lib"]
+# crate-type = ["lib"]
+crate-type = ["cdylib"] #dynamic library
 
 [features]
 default = ["sending", "receiving"]
