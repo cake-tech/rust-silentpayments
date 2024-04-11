@@ -58,7 +58,7 @@ pub struct ParamData {
 }
 
 #[no_mangle]
-pub extern "C" fn get_sec_key(data: *const ParamData) {
+pub extern "C" fn api_scan_outputs(data: *const ParamData) {
     let data = unsafe { &*data };
 
     let outputs_slice =
@@ -73,7 +73,6 @@ pub extern "C" fn get_sec_key(data: *const ParamData) {
         })
         .collect();
 
-    let secp = secp256k1::Secp256k1::new();
 
     let b_scan = unsafe {
         SecretKey::from_slice(slice::from_raw_parts(
@@ -91,6 +90,8 @@ pub extern "C" fn get_sec_key(data: *const ParamData) {
     };
     let is_testnet = unsafe { data.receiver_data.as_ref().unwrap().is_testnet };
     let change_label = Label::new(b_scan, 0);
+
+    let secp = secp256k1::Secp256k1::new();
     let mut sp_receiver = Receiver::new(
         0,
         b_scan.public_key(&secp),
@@ -99,11 +100,13 @@ pub extern "C" fn get_sec_key(data: *const ParamData) {
         is_testnet,
     )
     .unwrap();
+
     let labels = unsafe { slice::from_raw_parts(data.receiver_data.as_ref().unwrap().labels, 1) };
     for label_int in labels {
         let label = Label::new(b_scan, *label_int);
         sp_receiver.add_label(label).unwrap();
     }
+    
     let tweak_data =
         unsafe { PublicKey::from_slice(slice::from_raw_parts(data.tweak_bytes, 33)).unwrap() };
     let shared_secret = calculate_shared_secret(tweak_data, b_scan).unwrap();
