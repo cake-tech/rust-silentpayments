@@ -47,6 +47,7 @@ pub struct ReceiverData {
     B_spend_bytes: *const u8,
     is_testnet: bool,
     labels: *const u32,
+    labels_len: u64,
 }
 
 #[repr(C)]
@@ -57,8 +58,14 @@ pub struct ParamData {
     receiver_data: *const ReceiverData,
 }
 
+#[repr(C)]
+pub struct BytesVec {
+    data: *mut u8,
+    len: usize,
+}
+
 #[no_mangle]
-pub extern "C" fn api_scan_outputs(data: *const ParamData) {
+pub extern "C" fn api_scan_outputs(data: *const ParamData) -> BytesVec {
     let data = unsafe { &*data };
 
     let outputs_slice =
@@ -101,7 +108,7 @@ pub extern "C" fn api_scan_outputs(data: *const ParamData) {
     )
     .unwrap();
 
-    let labels = unsafe { slice::from_raw_parts(data.receiver_data.as_ref().unwrap().labels, 1) };
+    let labels = unsafe { slice::from_raw_parts(data.receiver_data.as_ref().unwrap().labels, data.receiver_data.as_ref().unwrap().labels_len as usize) };
     for label_int in labels {
         let label = Label::new(b_scan, *label_int);
         sp_receiver.add_label(label).unwrap();
@@ -113,6 +120,7 @@ pub extern "C" fn api_scan_outputs(data: *const ParamData) {
     let scanned_outputs_received = sp_receiver
         .scan_transaction(&shared_secret, outputs_to_check)
         .unwrap();
+    println!("scanned_outputs_received: {:?}", scanned_outputs_received);
     let key_tweaks: Vec<Scalar> = scanned_outputs_received
         .into_iter()
         .flat_map(|(_, map)| {
@@ -124,5 +132,38 @@ pub extern "C" fn api_scan_outputs(data: *const ParamData) {
         })
         .collect();
 
-    println!("key_tweaks: {:?}", key_tweaks);
+    let bytes: Vec<u8> = key_tweaks.iter().flat_map(|scalar| scalar.to_be_bytes()).collect();
+    // let bytes = [bytes.clone(), bytes.clone()].concat();
+    // Capture the length of the bytes vector before forgetting it
+    let bytes_len = bytes.len();
+
+    // Obtain a raw pointer to the vector's buffer
+    let bytes_ptr = bytes.as_ptr() as *mut u8;
+
+    // Now, we can forget the bytes vector to prevent Rust from automatically
+    // deallocating its buffer when the vector goes out of scope.
+    std::mem::forget(bytes);
+
+    // Construct your BytesVec struct using the raw pointer and the length
+    // captured before the forget
+    BytesVec {
+        data: bytes_ptr,
+        len: bytes_len,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn free_bytes_vec(bytes_vec: *mut u8, len: usize) {
+    unsafe {
+        // if !bytes_vec.is_null() {
+        //     let bv = Box::from_raw(bytes_vec);
+        //     let data_vec = Vec::from_raw_parts(bv, len, len);
+        //     drop(data_vec); // This frees the memory allocated for the bytes
+        //     drop(bv); // This frees the BytesVec memory itself
+        // }
+
+        if !bytes_vec.is_null() {
+            let _ = Vec::from_raw_parts(bytes_vec, len, len);
+        }
+    }
 }
